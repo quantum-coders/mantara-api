@@ -15,23 +15,28 @@ model User {
   uid       String   @unique @default(cuid())
   username  String   @unique
   email     String   @unique
-  firstname String?
-  lastname  String?
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
   nicename  String
   password  String
   type      String   @default("User")
   status    String   @default("Active")
   language  String   @default("en")
   metas     Json?    @default("{}")
-  created   DateTime @default(now())
-  modified  DateTime @default(now()) @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
-  campaigns Campaign[]
-  chats     Chat[]
-  threads   Thread[]
-  messages  Message[]
+  // Relations
+  projects Project[]
+  chats    Chat[]
+  threads  Thread[]
+  messages Message[]
 
-  @@map("user")
+  // Indexes
+  @@index([email])
+  @@index([username])
+  @@index([status])
+  @@map("users")
 }
 
 model Attachment {
@@ -45,80 +50,198 @@ model Attachment {
   source     String   @default("")
   acl        String   @default("")
   metas      Json?    @default("{}")
-  created    DateTime @default(now())
-  modified   DateTime @default(now()) @updatedAt
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
 
-  @@map("attachment")
+  // Relations
+  projects Project[] // Optional: Add this if attachments can be linked to projects
+
+  // Indexes
+  @@index([slug])
+  @@index([mime])
+  @@map("attachments")
 }
 
-model Campaign {
-  id          Int      @id @default(autoincrement())
-  uid         String   @unique @default(cuid())
-  idUser      Int
+model Project {
+  id          Int     @id @default(autoincrement())
+  uid         String  @unique @default(cuid())
+  userId      Int     @map("user_id")
   name        String
-  description String?  @db.Text
-  status      String   @default("Draft") // Draft, Active, Paused, Completed
-  coverImage  String? // Could reference an Attachment
-  metas       Json?    @default("{}")
-  created     DateTime @default(now())
-  modified    DateTime @default(now()) @updatedAt
+  description String? @db.Text
+  status      String  @default("Draft") // Draft, Active, Paused, Completed
+  coverImage  String? @map("cover_image")
+  repoUrl     String? @map("repo_url")
 
-  user User @relation(fields: [idUser], references: [id])
+  // Smart Contract Specific Fields
+  network         String  @default("mantle_testnet") // mantle_mainnet, mantle_testnet, etc.
+  contractAddress String? @map("contract_address")
+  compilerVersion String? @map("compiler_version")
+  abi             Json?
+  bytecode        String? @db.Text
+  sourceCode      String? @map("source_code") @db.Text
 
-  @@map("campaign")
+  // Deployment & Build Data
+  deployedAt   DateTime? @map("deployed_at")
+  buildStatus  String    @default("NotStarted") @map("build_status") // NotStarted, Building, Success, Failed
+  lastBuildLog String?   @map("last_build_log") @db.Text
+  txHash       String?   @map("tx_hash") // Transaction hash of deployment
+  gasUsed      BigInt?   @map("gas_used")
+
+  // Foundry Specific
+  foundryConfig Json? @default("{}") @map("foundry_config")
+  dependencies  Json? @default("[]") // Array of dependencies for the project
+
+  // Testing & Verification
+  verified    Boolean @default(false)
+  testsPassed Int     @default(0) @map("tests_passed")
+  testsFailed Int     @default(0) @map("tests_failed")
+
+  metas     Json?    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
+  chats       Chat[]
+  contracts   Contract[] // A project can have multiple related contracts
+  deployments Deployment[] // Track different deployments of the project
+
+  // Indexes
+  @@index([userId])
+  @@index([status])
+  @@index([network])
+  @@index([contractAddress])
+  @@index([buildStatus])
+  @@map("projects")
+}
+
+model Contract {
+  id           Int      @id @default(autoincrement())
+  uid          String   @unique @default(cuid())
+  projectId    Int      @map("project_id")
+  name         String
+  contractType String   @default("ERC20") @map("contract_type") // ERC20, ERC721, Custom, etc.
+  sourceCode   String   @map("source_code") @db.Text
+  abi          Json?
+  bytecode     String?  @db.Text
+  isMain       Boolean  @default(false) @map("is_main") // Is this the main contract in the project?
+  metas        Json?    @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployments Deployment[]
+
+  // Indexes
+  @@index([projectId])
+  @@index([contractType])
+  @@index([isMain])
+  @@map("contracts")
+}
+
+model Deployment {
+  id              Int      @id @default(autoincrement())
+  uid             String   @unique @default(cuid())
+  projectId       Int      @map("project_id")
+  contractId      Int?     @map("contract_id") // Optional: if deploying a specific contract
+  network         String // mantle_mainnet, mantle_testnet, etc.
+  deployedAt      DateTime @default(now()) @map("deployed_at")
+  contractAddress String?  @map("contract_address")
+  txHash          String?  @map("tx_hash")
+  gasUsed         BigInt?  @map("gas_used")
+  status          String   @default("Pending") // Pending, Success, Failed
+  errorMessage    String?  @map("error_message") @db.Text
+  constructorArgs Json?    @map("constructor_args") // Constructor arguments used in deployment
+  metas           Json?    @default("{}")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contract Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  // Indexes
+  @@index([projectId])
+  @@index([contractId])
+  @@index([network])
+  @@index([status])
+  @@index([contractAddress])
+  @@map("deployments")
 }
 
 model Chat {
-  id       Int      @id @default(autoincrement())
-  uid      String   @unique @default(cuid())
-  idUser   Int      @map("id_user")
-  status   String   @default("Active")
-  idEntity Int?     @map("id_entity")
-  entity   String?  @map("entity")
-  metas    Json?    @default("{}")
-  created  DateTime @default(now())
-  modified DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  uid       String   @unique @default(cuid())
+  userId    Int      @map("user_id")
+  projectId Int?     @map("project_id") // Optional link to a project
+  status    String   @default("Active")
+  entityId  Int?     @map("entity_id")
+  entity    String?
+  metas     Json?    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
-  user     User      @relation(fields: [idUser], references: [id])
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project  Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   threads  Thread[]
   messages Message[]
 
-  @@map("chat")
+  // Indexes
+  @@index([userId])
+  @@index([projectId])
+  @@index([entity, entityId])
+  @@index([status])
+  @@map("chats")
 }
 
 model Thread {
-  id       Int      @id @default(autoincrement())
-  uid      String   @unique @default(cuid())
-  idChat   Int      @map("id_chat")
-  idUser   Int      @map("id_user")
-  status   String   @default("Active")
-  metas    Json?    @default("{}")
-  created  DateTime @default(now())
-  modified DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  uid       String   @unique @default(cuid())
+  chatId    Int      @map("chat_id")
+  userId    Int      @map("user_id")
+  status    String   @default("Active")
+  metas     Json?    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
-  chat     Chat      @relation(fields: [idChat], references: [id])
-  user     User      @relation(fields: [idUser], references: [id])
+  // Relations
+  chat     Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
 
-  @@map("thread")
+  // Indexes
+  @@index([chatId])
+  @@index([userId])
+  @@index([status])
+  @@map("threads")
 }
 
 model Message {
-  id       Int      @id @default(autoincrement())
-  uid      String   @unique @default(cuid())
-  idChat   Int      @map("id_chat")
-  idThread Int      @map("id_thread")
-  idUser   Int      @map("id_user")
-  text     String   @db.LongText
-  role     String   @default("")
-  status   String   @default("Active")
-  metas    Json?    @default("{}")
-  created  DateTime @default(now())
-  modified DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  uid       String   @unique @default(cuid())
+  chatId    Int      @map("chat_id")
+  threadId  Int      @map("thread_id")
+  userId    Int      @map("user_id")
+  text      String   @db.LongText
+  role      String   @default("")
+  status    String   @default("Active")
+  metas     Json?    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
-  chat   Chat   @relation(fields: [idChat], references: [id])
-  thread Thread @relation(fields: [idThread], references: [id])
-  user   User   @relation(fields: [idUser], references: [id])
+  // Relations
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  thread Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("message")
+  // Indexes
+  @@index([chatId])
+  @@index([threadId])
+  @@index([userId])
+  @@index([role])
+  @@index([status])
+  @@map("messages")
 }
