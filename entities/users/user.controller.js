@@ -37,7 +37,7 @@ class UserController extends PrimateController {
 
 		if(!userId) throw new Error('Unauthorized: No user found');
 
-		/** @type {User} */
+		/** @type {{metas?: UserMetas, firstname: string, nicename?: string, language?: string, type?: string, login?: string, lastname: string, uid?: string, password?: string, id?: number, email: string, username?: string, status?: string}|null} */
 		const user = await PrimateService.findById('user', userId);
 
 		if(!user) throw new Error('User not found');
@@ -161,7 +161,7 @@ class UserController extends PrimateController {
 			// Get user from req
 			const signedUser = req.user.payload;
 
-			/** @type {User} */
+			/** @type {{metas?: UserMetas, firstname: string, nicename?: string, language?: string, type?: string, login?: string, lastname: string, uid?: string, password?: string, id?: number, email: string, username?: string, status?: string}|null} */
 			const user = await PrimateService.findById('user', signedUser.id);
 
 			if(!user) {
