@@ -1438,6 +1438,10 @@ class AIService {
 					try {
 						const project = await PrimateService.prisma.project.findUnique({
 							where: { id: idProject },
+							include: {
+								contracts: true,
+								deployments: true,
+							},
 						});
 						if(project) {
 							sendSSE({ type: 'project', data: project });

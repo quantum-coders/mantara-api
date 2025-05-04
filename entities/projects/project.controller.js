@@ -374,10 +374,19 @@ class ProjectController extends PrimateController {
 	static async getUserProject(req, res) {
 		try {
 			const user = await UserController.getMe(req, req.params.id);
+			const idProject = req.params.idProject;
 			if(!user) return res.respond({ status: 401, message: 'User not found or error fetching user' });
 
-			const project = await PrimateService.findById('project', req.params.idProject, {
+			/*const project = await PrimateService.findById('project', req.params.idProject, {
 				userId: user.id,
+			});*/
+
+			const project = await PrimateService.prisma.project.findUnique({
+				where: { id: parseInt(idProject) },
+				include: {
+					contracts: true,
+					deployments: true,
+				},
 			});
 
 			if(!project) return res.respond({ status: 404, message: 'project not found' });
