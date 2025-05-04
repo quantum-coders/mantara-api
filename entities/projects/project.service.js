@@ -3,7 +3,7 @@ import 'dotenv/config';
 import moment from 'moment-timezone';
 moment.locale('es');
 
-class CampaignService {
+class ProjectService {
 	/**
 	 * Creates a new campaign with the given data.
 	 *
@@ -20,7 +20,7 @@ class CampaignService {
 			if(data.productService) metas.productService = data.productService;
 
 			// Primate Create
-			return PrimateService.create('campaign', data);
+			return PrimateService.create('project', data);
 		} catch(e) {
 			throw e;
 		}
@@ -40,23 +40,23 @@ class CampaignService {
 			if(data.startDate) data.startDate = new Date(data.startDate);
 			if(data.endDate) data.endDate = new Date(data.endDate);
 
-			return PrimateService.update('campaign', id, data);
+			return PrimateService.update('project', id, data);
 		} catch(e) {
 			throw e;
 		}
 	}
 
 	/**
-	 * Finds campaigns by user ID.
+	 * Finds projects by user ID.
 	 *
-	 * @param {number} idUser - The ID of the user to find campaigns for.
+	 * @param {number} userId - The ID of the user to find projects for.
 	 * @returns {Promise<Array>} - A promise that resolves to an array of campaign objects.
 	 */
-	static async findByUser(idUser) {
+	static async findByUser(userId) {
 		try {
-			return await primate.prisma.campaign.findMany({
+			return await primate.prisma.project.findMany({
 				where: {
-					idUser,
+					userId,
 				},
 				orderBy: {
 					created: 'desc',
@@ -76,14 +76,14 @@ class CampaignService {
 	 */
 	static async activate(id) {
 		try {
-			const campaign = await PrimateService.findById('campaign', id);
+			const project = await PrimateService.findById('project', id);
 
-			if(!campaign) throw new Error('Campaign not found');
+			if(!project) throw new Error('project not found');
 
 			// Check if campaign can be activated (has required fields)
-			if(!campaign.startDate) throw new Error('Cannot activate campaign without a start date');
+			if(!project.startDate) throw new Error('Cannot activate campaign without a start date');
 
-			return await PrimateService.update('campaign', id, { status: 'Active' });
+			return await PrimateService.update('project', id, { status: 'Active' });
 		} catch(e) {
 			throw e;
 		}
@@ -154,4 +154,4 @@ class CampaignService {
 	}
 }
 
-export default CampaignService;
+export default ProjectService;

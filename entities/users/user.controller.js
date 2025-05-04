@@ -111,9 +111,9 @@ class UserController extends PrimateController {
 	 */
 	static async updateProfile(req, res) {
 		try {
-			const idUser = req.params.id;
+			const userId = req.params.id;
 
-			if(idUser === 'me') {
+			if(userId === 'me') {
 				if(!req.user || !req.user.payload || !req.user.payload.id) {
 					return res.respond({ status: 401, message: 'Unauthorized' });
 				}
@@ -595,20 +595,20 @@ class UserController extends PrimateController {
 		if(!user) return res.respond({ status: 401, message: 'User not found or error fetching user' });
 
 		// get entity and idEntity from body
-		let { entity, idEntity } = req.body;
-		if(!entity || !idEntity) return res.respond({ status: 400, message: 'Entity and idEntity are required' });
+		let { entity, entityId } = req.body;
+		if(!entity || !entityId) return res.respond({ status: 400, message: 'Entity and idEntity are required' });
 
 		// convert idEntity to integer
-		if(!isNaN(idEntity)) idEntity = parseInt(idEntity);
+		if(!isNaN(entityId)) entityId = parseInt(entityId);
 
 		try {
 			// check if a chat exists for the user
-			let chat = await PrimateService.findBy('chat', { idUser: user.id, entity, idEntity });
-			if(!chat) chat = await PrimateService.create('chat', { idUser: user.id, entity, idEntity });
+			let chat = await PrimateService.findBy('chat', { userId: user.id, entity, entityId });
+			if(!chat) chat = await PrimateService.create('chat', { userId: user.id, entity, entityId });
 
 			// now create a thread for the chat or retrieve the existing thread
-			let thread = await PrimateService.findBy('thread', { idChat: chat.id });
-			if(!thread) thread = await PrimateService.create('thread', { idChat: chat.id, idUser: user.id });
+			let thread = await PrimateService.findBy('thread', { chatId: chat.id });
+			if(!thread) thread = await PrimateService.create('thread', { chatId: chat.id, userId: user.id });
 
 			// now get all the messages for the thread
 			thread.messages = await PrimateService.all('message', {

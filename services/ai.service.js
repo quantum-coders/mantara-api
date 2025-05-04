@@ -300,7 +300,7 @@ class AIService {
 
 				// Save the message to the database
 				await PrimateService.create('message', {
-					idUser: userId,
+					userId: userId,
 					idChat,
 					idThread,
 					role: 'assistant',
@@ -1164,7 +1164,7 @@ class AIService {
 
 			// Save user message to chat history
 			await PrimateService.create('message', {
-				idUser: userId,
+				userId: userId,
 				idChat,
 				idThread,
 				role: 'user',
@@ -1266,7 +1266,7 @@ class AIService {
 					try {
 						const updatedContext = await this.extractContext(prompt, fullMessage, context);
 						await PrimateService.create('message', {
-							idUser: userId,
+							userId: userId,
 							idChat,
 							idThread,
 							role: 'assistant',

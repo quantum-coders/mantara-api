@@ -1,10 +1,10 @@
 import sharp from 'sharp';
 import primate, { PrimateService, PrimateController } from '@thewebchimp/primate';
-import CampaignService from './campaign.service.js';
+import ProjectService from './project.service.js';
 import UploadService from '#services/upload.service.js';
 import UserController from '#entities/users/user.controller.js';
 
-class CampaignController extends PrimateController {
+class ProjectController extends PrimateController {
 
 	/**
 	 * Creates a new campaign.
@@ -24,10 +24,10 @@ class CampaignController extends PrimateController {
 
 			const campaignData = {
 				...req.body,
-				idUser: req.user.payload.id,
+				userId: req.user.payload.id,
 			};
 
-			const campaign = await CampaignService.create(campaignData);
+			const campaign = await ProjectService.create(campaignData);
 
 			return res.respond({
 				data: campaign,
@@ -57,25 +57,25 @@ class CampaignController extends PrimateController {
 				return res.respond({ status: 401, message: 'Unauthorized' });
 			}
 
-			const campaign = await PrimateService.findById('campaign', req.params.id);
+			const project = await PrimateService.findById('project', req.params.id);
 
-			if (!campaign) {
+			if (!project) {
 				return res.respond({ status: 404, message: 'Campaign not found' });
 			}
 
-			if (campaign.idUser !== req.user.payload.id) {
+			if (project.userId !== req.user.payload.id) {
 				return res.respond({ status: 403, message: 'Access denied' });
 			}
 
 			return res.respond({
-				data: campaign,
+				data: project,
 				message: 'Campaign retrieved successfully',
 			});
 		} catch (e) {
 			console.error(e);
 			return res.respond({
 				status: 400,
-				message: 'Error retrieving campaign: ' + e.message,
+				message: 'Error retrieving project: ' + e.message,
 			});
 		}
 	}
@@ -101,11 +101,11 @@ class CampaignController extends PrimateController {
 				return res.respond({ status: 404, message: 'Campaign not found' });
 			}
 
-			if (campaign.idUser !== req.user.payload.id) {
+			if (campaign.userId !== req.user.payload.id) {
 				return res.respond({ status: 403, message: 'Access denied' });
 			}
 
-			const updatedCampaign = await CampaignService.update(req.params.id, req.body);
+			const updatedCampaign = await ProjectService.update(req.params.id, req.body);
 
 			return res.respond({
 				data: updatedCampaign,
@@ -141,7 +141,7 @@ class CampaignController extends PrimateController {
 				return res.respond({ status: 404, message: 'Campaign not found' });
 			}
 
-			if (campaign.idUser !== req.user.payload.id) {
+			if (campaign.userId !== req.user.payload.id) {
 				return res.respond({ status: 403, message: 'Access denied' });
 			}
 
@@ -160,10 +160,10 @@ class CampaignController extends PrimateController {
 	}
 
 	/**
-	 * Retrieves all campaigns for the authenticated user.
+	 * Retrieves all projects for the authenticated user.
 	 *
 	 * @param {Object} req - Request object.
-	 * @param {Object} res - Response with user's campaigns or error.
+	 * @param {Object} res - Response with user's projects or error.
 	 * @returns {Promise<void>}
 	 */
 	static async getMyList(req, res) {
@@ -172,7 +172,7 @@ class CampaignController extends PrimateController {
 				return res.respond({ status: 401, message: 'Unauthorized' });
 			}
 
-			const campaigns = await CampaignService.findByUser(req.user.payload.id);
+			const campaigns = await ProjectService.findByUser(req.user.payload.id);
 
 			return res.respond({
 				data: campaigns,
@@ -182,7 +182,7 @@ class CampaignController extends PrimateController {
 			console.error(e);
 			return res.respond({
 				status: 400,
-				message: 'Error retrieving campaigns: ' + e.message,
+				message: 'Error retrieving projects: ' + e.message,
 			});
 		}
 	}
@@ -209,7 +209,7 @@ class CampaignController extends PrimateController {
 				return res.respond({ status: 404, message: 'Campaign not found' });
 			}
 
-			if (campaign.idUser !== req.user.payload.id) {
+			if (campaign.userId !== req.user.payload.id) {
 				return res.respond({ status: 403, message: 'Access denied' });
 			}
 
@@ -217,13 +217,13 @@ class CampaignController extends PrimateController {
 
 			switch (action) {
 				case 'activate':
-					updatedCampaign = await CampaignService.activate(id);
+					updatedCampaign = await ProjectService.activate(id);
 					break;
 				case 'pause':
-					updatedCampaign = await CampaignService.pause(id);
+					updatedCampaign = await ProjectService.pause(id);
 					break;
 				case 'complete':
-					updatedCampaign = await CampaignService.complete(id);
+					updatedCampaign = await ProjectService.complete(id);
 					break;
 				default:
 					return res.respond({ status: 400, message: 'Invalid action' });
@@ -267,7 +267,7 @@ class CampaignController extends PrimateController {
 				return res.respond({ status: 404, message: 'Campaign not found' });
 			}
 
-			if (campaign.idUser !== req.user.payload.id) {
+			if (campaign.userId !== req.user.payload.id) {
 				return res.respond({ status: 403, message: 'Access denied' });
 			}
 
@@ -284,7 +284,7 @@ class CampaignController extends PrimateController {
 				metas: { type: 'cover', campaignId: campaign.id }
 			});
 
-			const updatedCampaign = await CampaignService.update(req.params.id, {
+			const updatedCampaign = await ProjectService.update(req.params.id, {
 				coverImage: coverAttachment.id,
 				metas: {
 					...campaign.metas,
@@ -329,11 +329,11 @@ class CampaignController extends PrimateController {
 				return res.respond({ status: 404, message: 'Campaign not found' });
 			}
 
-			if (campaign.idUser !== req.user.payload.id) {
+			if (campaign.userId !== req.user.payload.id) {
 				return res.respond({ status: 403, message: 'Access denied' });
 			}
 
-			const updatedCampaign = await CampaignService.updateMetrics(req.params.id, req.body.metrics);
+			const updatedCampaign = await ProjectService.updateMetrics(req.params.id, req.body.metrics);
 
 			return res.respond({
 				data: updatedCampaign,
@@ -348,50 +348,50 @@ class CampaignController extends PrimateController {
 		}
 	}
 
-	static async getUserCampaigns(req, res) {
+	static async getUserProjects(req, res) {
 		try {
 			const user = await UserController.getMe(req, req.params.id);
 			if(!user) return res.respond({ status: 401, message: 'User not found or error fetching user' });
 
-			const campaigns = await PrimateService.all('campaign', req.query, {
-				idUser: user.id,
+			const projects = await PrimateService.all('project', req.query, {
+				userId: user.id,
 			});
 
 			return res.respond({
-				data: campaigns.data,
-				message: 'Campaigns retrieved successfully',
+				data: projects.data,
+				message: 'projects retrieved successfully',
 				props: {
-					count: campaigns.count
+					count: projects.count
 				}
 			});
 
 		} catch(e) {
 			console.error(e);
-			return res.respond({ status: 400, message: 'Error getting campaigns: ' + e.message });
+			return res.respond({ status: 400, message: 'Error getting projects: ' + e.message });
 		}
 	}
 
-	static async getUserCampaign(req, res) {
+	static async getUserProject(req, res) {
 		try {
 			const user = await UserController.getMe(req, req.params.id);
 			if(!user) return res.respond({ status: 401, message: 'User not found or error fetching user' });
 
-			const campaign = await PrimateService.findById('campaign', req.params.idCampaign, {
-				idUser: user.id,
+			const project = await PrimateService.findById('project', req.params.idProject, {
+				userId: user.id,
 			});
 
-			if(!campaign) return res.respond({ status: 404, message: 'Campaign not found' });
+			if(!project) return res.respond({ status: 404, message: 'project not found' });
 
 			return res.respond({
-				data: campaign,
-				message: 'Campaign retrieved successfully',
+				data: project,
+				message: 'project retrieved successfully',
 			});
 
 		} catch(e) {
 			console.error(e);
-			return res.respond({ status: 400, message: 'Error getting campaign: ' + e.message });
+			return res.respond({ status: 400, message: 'Error getting project: ' + e.message });
 		}
 	}
 }
 
-export default CampaignController;
+export default ProjectController;
