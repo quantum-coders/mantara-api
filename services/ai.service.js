@@ -19,6 +19,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const execPromise = promisify(exec);
 const mkdirPromise = promisify(fs.mkdir);
@@ -1888,6 +1889,9 @@ chain_id = 5000
 		this.logger.entry(functionName, { args });
 
 		try {
+			// Importaciones necesarias para ESM (deben estar fuera de la función o al inicio del archivo)
+			// No las coloco aquí porque deben ser importadas a nivel de módulo, no dentro de la función
+
 			const {
 				projectId,
 				contractName,
@@ -1908,24 +1912,66 @@ chain_id = 5000
 				throw new Error('Invalid projectId format');
 			}
 
-			this.logger.info(`Creating contract "${ contractName }" for project ${ projectIdNum }`);
+			this.logger.info(`Creating contract "${contractName}" for project ${projectIdNum}`);
 
-			// Check if project exists
-			const project = await PrimateService.prisma.project.findUnique({
+			// Check if project exists - usar let en lugar de const para poder reasignarlo después
+			let project = await PrimateService.prisma.project.findUnique({
 				where: { id: projectIdNum },
 			});
 
 			if(!project) {
-				throw new Error(`Project with ID ${ projectIdNum } not found`);
+				throw new Error(`Project with ID ${projectIdNum} not found`);
 			}
 
-			// Get project directory from project metadata
-			const projectDir = project.metas?.projectDir;
-			if(!projectDir) {
-				throw new Error(`Project directory not found for project ${ projectIdNum }. Please initialize the project first.`);
+			// Check if project is initialized and initialize if needed
+			if(!project.metas?.projectDir) {
+				this.logger.info(`Project directory not found for project ${projectIdNum}. Initializing project.`);
+
+				// Initialize the project
+				// En lugar de usar __dirname, usar una ruta relativa o absoluta configurada
+				const projectDir = path.resolve(process.cwd(), 'projects', `project-${projectIdNum}`);
+
+				// Create project directory if it doesn't exist
+				if(!fs.existsSync(projectDir)) {
+					await fsPromises.mkdir(projectDir, { recursive: true });
+				}
+
+				// Create basic project structure
+				const srcDir = path.join(projectDir, 'src');
+				const testDir = path.join(projectDir, 'test');
+				const scriptDir = path.join(projectDir, 'script');
+
+				for(const dir of [srcDir, testDir, scriptDir]) {
+					if(!fs.existsSync(dir)) {
+						await fsPromises.mkdir(dir, { recursive: true });
+					}
+				}
+
+				// Update project with directory information
+				await PrimateService.prisma.project.update({
+					where: { id: projectIdNum },
+					data: {
+						metas: {
+							...(project.metas || {}),
+							projectDir,
+							initialized: true,
+							initializeDate: new Date().toISOString()
+						}
+					}
+				});
+
+				// Reload project with updated information
+				project = await PrimateService.prisma.project.findUnique({
+					where: { id: projectIdNum }
+				});
+
+				this.logger.info(`Project initialized with directory: ${projectDir}`);
 			}
 
-			// Create the contract using Prisma
+			// Now we have a valid project directory
+			const projectDir = project.metas.projectDir;
+
+			// Create the contract record in the database
 			const contract = await PrimateService.prisma.contract.create({
 				data: {
 					projectId: projectIdNum,
@@ -1958,24 +2004,24 @@ chain_id = 5000
 			}
 
 			// Write the contract to the project directory
-			const contractFilePath = path.join(projectDir, 'src', `${ contractName }.sol`);
+			const contractFilePath = path.join(projectDir, 'src', `${contractName}.sol`);
 
 			// Ensure src directory exists
 			const srcDir = path.join(projectDir, 'src');
 			if(!fs.existsSync(srcDir)) {
-				await mkdirPromise(srcDir, { recursive: true });
+				await fsPromises.mkdir(srcDir, { recursive: true });
 			}
 
 			// Write contract source code to file
-			await writeFilePromise(contractFilePath, sourceCode);
+			await fsPromises.writeFile(contractFilePath, sourceCode);
 
-			this.logger.info(`Contract file written to ${ contractFilePath }`);
+			this.logger.info(`Contract file written to ${contractFilePath}`);
 
 			// Add test file if it's a main contract
 			if(isMain) {
 				const testDir = path.join(projectDir, 'test');
 				if(!fs.existsSync(testDir)) {
-					await mkdirPromise(testDir, { recursive: true });
+					await fsPromises.mkdir(testDir, { recursive: true });
 				}
 
 				// Create a basic test file
@@ -1983,13 +2029,13 @@ chain_id = 5000
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-import "../src/${ contractName }.sol";
+import "../src/${contractName}.sol";
 
-contract ${ contractName }Test is Test {
-    ${ contractName } public instance;
+contract ${contractName}Test is Test {
+    ${contractName} public instance;
 
     function setUp() public {
-        instance = new ${ contractName }();
+        instance = new ${contractName}();
     }
 
     function testExample() public {
@@ -1997,9 +2043,36 @@ contract ${ contractName }Test is Test {
     }
 }`;
 
-				const testFilePath = path.join(testDir, `${ contractName }.t.sol`);
-				await writeFilePromise(testFilePath, testContent);
-				this.logger.info(`Test file written to ${ testFilePath }`);
+				const testFilePath = path.join(testDir, `${contractName}.t.sol`);
+				await fsPromises.writeFile(testFilePath, testContent);
+				this.logger.info(`Test file written to ${testFilePath}`);
+
+				// Create a deployment script
+				const scriptDir = path.join(projectDir, 'script');
+				if(!fs.existsSync(scriptDir)) {
+					await fsPromises.mkdir(scriptDir, { recursive: true });
+				}
+
+				const deploymentScript = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.13;
+
+import "forge-std/Script.sol";
+import "../src/${contractName}.sol";
+
+contract Deploy${contractName} is Script {
+    function run() external {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        vm.startBroadcast(deployerPrivateKey);
+        
+        ${contractName} instance = new ${contractName}();
+        
+        vm.stopBroadcast();
+    }
+}`;
+
+				const scriptFilePath = path.join(scriptDir, `Deploy${contractName}.s.sol`);
+				await fsPromises.writeFile(scriptFilePath, deploymentScript);
+				this.logger.info(`Deployment script written to ${scriptFilePath}`);
 			}
 
 			// Update contract record with file path
@@ -2008,24 +2081,26 @@ contract ${ contractName }Test is Test {
 				data: {
 					metas: {
 						...contract.metas,
-						filePath: `src/${ contractName }.sol`,
+						filePath: `src/${contractName}.sol`,
+						hasTests: isMain,
+						hasDeploymentScript: isMain,
 					},
 				},
 			});
 
-			this.logger.info(`Contract created successfully with ID: ${ contract.id }`);
+			this.logger.info(`Contract created successfully with ID: ${contract.id}`);
 			this.logger.exit(functionName, { success: true, contractId: contract.id });
 
 			return {
 				contract,
-				message: `Contract "${ contractName }" created successfully for project "${ project.name }"`,
-				filePath: `src/${ contractName }.sol`,
+				message: `Contract "${contractName}" created successfully for project "${project.name}"`,
+				filePath: `src/${contractName}.sol`,
 			};
 		} catch(error) {
 			this.logger.error(`Error creating smart contract:`, error);
 			this.logger.exit(functionName, { error: true });
 
-			throw new Error(`Failed to create smart contract: ${ error.message }`);
+			throw new Error(`Failed to create smart contract: ${error.message}`);
 		}
 	}
 
@@ -4154,6 +4229,9 @@ contract ${ contractName }Test is Test {
 		const functionName = 'createSmartContractExecutor';
 		this.logger.entry(functionName, { args });
 
+		const __filename = fileURLToPath(import.meta.url);
+		const __dirname = path.dirname(__filename);
+
 		try {
 			const {
 				projectId,
@@ -4178,7 +4256,7 @@ contract ${ contractName }Test is Test {
 			this.logger.info(`Creating contract "${contractName}" for project ${projectIdNum}`);
 
 			// Check if project exists
-			const project = await PrimateService.prisma.project.findUnique({
+			let project = await PrimateService.prisma.project.findUnique({
 				where: { id: projectIdNum },
 			});
 
@@ -4186,11 +4264,52 @@ contract ${ contractName }Test is Test {
 				throw new Error(`Project with ID ${projectIdNum} not found`);
 			}
 
-			// Get project directory from project metadata
-			const projectDir = project.metas?.projectDir;
-			if(!projectDir) {
-				throw new Error(`Project directory not found for project ${projectIdNum}. Please initialize the project first.`);
+			// Check if project is initialized and initialize if needed
+			if(!project.metas?.projectDir) {
+				this.logger.info(`Project directory not found for project ${projectIdNum}. Initializing project.`);
+
+				// Initialize the project
+				const projectDir = path.join(__dirname, '../projects', `project-${projectIdNum}`);
+
+				// Create project directory if it doesn't exist
+				if(!fs.existsSync(projectDir)) {
+					await mkdirPromise(projectDir, { recursive: true });
+				}
+
+				// Create basic project structure
+				const srcDir = path.join(projectDir, 'src');
+				const testDir = path.join(projectDir, 'test');
+				const scriptDir = path.join(projectDir, 'script');
+
+				for(const dir of [srcDir, testDir, scriptDir]) {
+					if(!fs.existsSync(dir)) {
+						await mkdirPromise(dir, { recursive: true });
+					}
+				}
+
+				// Update project with directory information
+				await PrimateService.prisma.project.update({
+					where: { id: projectIdNum },
+					data: {
+						metas: {
+							...(project.metas || {}),
+							projectDir,
+							initialized: true,
+							initializeDate: new Date().toISOString()
+						}
+					}
+				});
+
+				// Reload project with updated information
+				project = await PrimateService.prisma.project.findUnique({
+					where: { id: projectIdNum }
+				});
+
+				this.logger.info(`Project initialized with directory: ${projectDir}`);
 			}
+
+			// Now we have a valid project directory
+			const projectDir = project.metas.projectDir;
 
 			// Create the contract record in the database
 			const contract = await PrimateService.prisma.contract.create({
