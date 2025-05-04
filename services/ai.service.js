@@ -888,14 +888,6 @@ class AIService {
 				executeTools = true,
 			} = req.body;
 
-			if(!idCampaign) {
-				this.logger.warn('Warning: idCampaign is missing. Operations requiring it may fail.', {
-					userId,
-					idChat,
-					idThread,
-				});
-			}
-
 			if(idProject) {
 				this.logger.info(`Using existing project ID: ${idProject}`);
 			} else {
@@ -1256,7 +1248,10 @@ class AIService {
 				systemPrompt += `\n\n#Agent current information:\n${ JSON.stringify(agent) }\n\n`;
 			}
 
-			if(idCampaign) systemPrompt += `\n\n#Project ID: ${ idCampaign }\n\n`;
+			//if(idCampaign) systemPrompt += `\n\n#Project ID: ${ idCampaign }\n\n`;
+			if(idProject) systemPrompt += `\n\n#Project ID: ${ idProject }\n\n`;
+			if(userId) systemPrompt += `\n\n#User ID: ${ userId }\n\n`;
+
 
 			// First check if there are any tool calls needed
 			let toolResults = {};  // Cambiado de array a objeto para facilitar el acceso
@@ -2900,7 +2895,13 @@ contract Deploy${ contract.name } is Script {
 			const writeFilePromise = promisify(fs.writeFile);
 
 			// Create project directory
+			//await mkdirPromise(projectDir, { recursive: true });
+			// Instead of running forge init, create directories manually
 			await mkdirPromise(projectDir, { recursive: true });
+			await mkdirPromise(path.join(projectDir, 'src'), { recursive: true });
+			await mkdirPromise(path.join(projectDir, 'test'), { recursive: true });
+			await mkdirPromise(path.join(projectDir, 'script'), { recursive: true });
+			await mkdirPromise(path.join(projectDir, 'lib'), { recursive: true });
 
 			// Change to project directory and run forge init
 			this.logger.info(`Initializing Foundry project at ${ projectDir }`);
@@ -2934,8 +2935,18 @@ chain_id = 5000
 
 			await writeFilePromise(path.join(projectDir, 'foundry.toml'), foundryConfig);
 
+			const sampleContract = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.13;
+
+contract Sample {
+    constructor() {}
+}`;
+
+			await writeFilePromise(path.join(projectDir, 'src', 'Sample.sol'), sampleContract);
+
+
 			// Install dependencies if provided
-			if(dependencies.length > 0) {
+			/*if(dependencies.length > 0) {
 				this.logger.info(`Installing ${ dependencies.length } dependencies...`);
 				for(const dep of dependencies) {
 					// Extract the repo name for OpenZeppelin and other common libraries
@@ -2958,7 +2969,7 @@ chain_id = 5000
 						// Continue with other dependencies even if one fails
 					}
 				}
-			}
+			}*/
 
 			// Update project record with actual path
 			await PrimateService.prisma.project.update({
@@ -3094,9 +3105,9 @@ chain_id = 5000
 			}
 
 			// Write the contract to the project directory
-			const fs = require('fs');
-			const path = require('path');
-			const { promisify } = require('util');
+			//const fs = require('fs');
+			//const path = require('path');
+			//const { promisify } = require('util');
 			const writeFilePromise = promisify(fs.writeFile);
 
 			const contractFilePath = path.join(projectDir, 'src', `${ contractName }.sol`);
