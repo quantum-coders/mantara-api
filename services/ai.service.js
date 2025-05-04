@@ -531,9 +531,9 @@ class AIService {
 	/**
 	 * Execute tool calls returned from the model
 	 */
-	static async executeToolCalls(toolCalls, availableTools) {
+	static async executeToolCalls(toolCalls, availableTools, context) {
 		const functionName = 'executeToolCalls';
-		this.logger.entry(functionName, { toolCallsCount: toolCalls.length });
+		this.logger.entry(functionName, { toolCallsCount: toolCalls.length, contextProvided: !!context });
 
 		const results = [];
 
@@ -545,7 +545,7 @@ class AIService {
 				// Find the matching tool definition
 				const toolDef = availableTools.find(t => t.function.name === name);
 				if(!toolDef) {
-					this.logger.warn(`Tool ${ name } not found in available tools`, {});
+					this.logger.warn(`Tool ${name} not found in available tools`, {});
 					results.push({
 						name,
 						status: 'error',
@@ -559,8 +559,23 @@ class AIService {
 				let args;
 				try {
 					args = JSON.parse(argsString);
+
+					// Add context information to arguments if needed
+					if(context) {
+						if(name === 'createFoundryProject' && !args.idProject && context.idProject) {
+							args.idProject = context.idProject;
+							args.updateExisting = true;
+						}
+
+						// For project-related operations, ensure projectId is included
+						if(['createSmartContract', 'compileFoundryProject', 'deployToMantleTestnet', 'runFoundryTests'].includes(name)) {
+							if(context.idProject && !args.projectId) {
+								args.projectId = context.idProject;
+							}
+						}
+					}
 				} catch(parseError) {
-					this.logger.error(`Failed to parse arguments for tool ${ name }`, parseError);
+					this.logger.error(`Failed to parse arguments for tool ${name}`, parseError);
 					results.push({
 						name,
 						status: 'error',
@@ -572,7 +587,7 @@ class AIService {
 
 				// Check if the tool has an executor function
 				if(!toolDef.executor || typeof toolDef.executor !== 'function') {
-					this.logger.warn(`Tool ${ name } does not have an executor function`, {});
+					this.logger.warn(`Tool ${name} does not have an executor function`, {});
 					results.push({
 						name,
 						status: 'error',
@@ -583,9 +598,9 @@ class AIService {
 				}
 
 				// Execute the tool
-				this.logger.info(`Executing tool ${ name } with arguments:`, args);
-				const result = await toolDef.executor(args);
-				this.logger.info(`Tool ${ name } executed successfully`);
+				this.logger.info(`Executing tool ${name} with arguments:`, args);
+				const result = await toolDef.executor(args, context);
+				this.logger.info(`Tool ${name} executed successfully`);
 
 				results.push({
 					name,
@@ -867,6 +882,7 @@ class AIService {
 				model = process.env.DEFAULT_AI_MODEL || 'gpt-4.1-nano',
 				system,
 				idCampaign,
+				idProject,
 				agent,
 				tools = [],
 				executeTools = true,
@@ -878,6 +894,12 @@ class AIService {
 					idChat,
 					idThread,
 				});
+			}
+
+			if(idProject) {
+				this.logger.info(`Using existing project ID: ${idProject}`);
+			} else {
+				this.logger.info('No project ID provided, will create new project if needed');
 			}
 			//TODO: testing toolCall
 			// Replace the tools array in your handleAiMessage function with this:
@@ -1224,7 +1246,7 @@ class AIService {
 			this.logger.info(`Loaded ${ messages.length } messages from history`);
 
 			// Prepare system prompt with context and agent info if available
-			let systemPrompt = system || 'Eres un exertop en generar proyecto de mantle utilizando fountry, tienes una personalidad divertida y sarcastica, utiliza tus acciones disponibles si lo ves necesario.';
+			let systemPrompt = system || 'Eres un experto en generar proyecto de mantle utilizando fountry, tienes una personalidad divertida y sarcastica, utiliza tus acciones disponibles si lo ves necesario.';
 
 			if(context) {
 				systemPrompt += `\n\n#Context:\n${ JSON.stringify(context) }\n\n`;
@@ -1253,13 +1275,54 @@ class AIService {
 						stream: false,
 					});
 
+					// When setting up tools, pass the current context with the idProject and userId
+					const toolContext = {
+						userId,
+						idProject
+					};
+
 					// Extract and process any tool calls
 					const toolCalls = toolCheckResponse.choices?.[0]?.message?.tool_calls;
 					if(toolCalls && toolCalls.length > 0) {
 						this.logger.info(`Found ${ toolCalls.length } tool calls to execute`);
 
+						// For tools that need userId, ensure it's set dynamically
+						for(const toolCall of toolCalls) {
+
+							try {
+								// Parse the arguments
+								const args = JSON.parse(toolCall.function.arguments);
+
+								// For createFoundryProject, use the existing project ID if available
+								if(toolCall.function?.name === 'createFoundryProject') {
+									// Set userId dynamically
+									args.userId = userId;
+
+									// If we have an existing project ID, override the creation logic
+									if(idProject) {
+										// Flag to indicate this is an update, not a creation
+										args.updateExisting = true;
+										args.idProject = idProject;
+									}
+								}
+								// For other project-related operations, ensure the project ID is passed
+								else if(['createSmartContract', 'compileFoundryProject', 'deployToMantleTestnet', 'runFoundryTests'].includes(toolCall.function?.name)) {
+									// If idProject exists but projectId isn't set in args, use the idProject
+									if(idProject && !args.projectId) {
+										args.projectId = idProject;
+									}
+								}
+
+								// Update the arguments
+								toolCall.function.arguments = JSON.stringify(args);
+							} catch(e) {
+								this.logger.error(`Error updating context in tool call:`, e);
+							}
+						}
+
+
 						// Execute the tools
-						const toolResultsArray = await this.executeToolCalls(toolCalls, tools);
+						const toolResultsArray = await this.executeToolCalls(toolCalls, tools, toolContext);
 
 						// Convertir el array de resultados en un objeto para acceso más fácil
 						toolResultsArray.forEach(result => {
@@ -1312,20 +1375,49 @@ class AIService {
 					// 1) Guardar el mensaje y contexto:
 					try {
 						const updatedContext = await this.extractContext(prompt, fullMessage, context);
-						await PrimateService.create('message', {
-							userId: userId,
-							idChat,
-							idThread,
-							role: 'assistant',
-							text: fullMessage,
-							metas: {
-								url,
-								context: { ...context, ...updatedContext },
-								toolResults: Object.keys(toolResults).length
-									? JSON.stringify(toolResults)
-									: undefined,
-							},
-						});
+						try {
+							// First try to find the chat
+							const existingChat = await PrimateService.findById('chat', idChat);
+
+							// If chat doesn't exist, handle accordingly
+							if (!existingChat) {
+								throw new Error(`Chat with ID ${idChat} not found`);
+							}
+
+							// Then try to find the thread
+							const existingThread = await PrimateService.findById('thread', idThread);
+
+							// If thread doesn't exist, handle accordingly
+							if (!existingThread) {
+								throw new Error(`Thread with ID ${idThread} not found`);
+							}
+
+							// Create the message with proper relations
+							await PrimateService.create('message', {
+								role: 'assistant',
+								text: fullMessage,
+								metas: {
+									url,
+									context: { ...context, ...updatedContext },
+									toolResults: Object.keys(toolResults).length
+										? JSON.stringify(toolResults)
+										: undefined,
+								},
+								chat: {
+									connect: { id: idChat }
+								},
+								thread: {
+									connect: { id: idThread }
+								},
+								user: {
+									connect: { id: userId }
+								}
+							});
+
+						} catch (error) {
+							this.logger.error('Error saving message:', error);
+							// Handle the error appropriately
+						}
 						this.logger.info('Response saved to chat history with updated context');
 					} catch(err) {
 						this.logger.error('Error saving response or updating context:', err);
@@ -1590,6 +1682,8 @@ class AIService {
 				network = 'mantle_sepolia',
 				compilerVersion = '0.8.19',
 				dependencies = [],
+				updateExisting = false,  // New flag
+				idProject = null,        // ID for existing project
 			} = args;
 
 			// Validate required fields
@@ -1609,7 +1703,7 @@ class AIService {
 			const projectDir = `/tmp/projects/${ userIdNum }/${ projectName.replace(/[^a-zA-Z0-9]/g, '_') }`;
 
 			// Create the project using Prisma
-			const project = await PrimateService.prisma.project.create({
+			/*const project = await PrimateService.prisma.project.create({
 				data: {
 					name: projectName,
 					description,
@@ -1634,9 +1728,9 @@ class AIService {
 						projectDir,
 					},
 				},
-			});
+			});*/
 
-			this.logger.info(`Project record created in database with ID: ${ project.id }`);
+			//this.logger.info(`Project record created in database with ID: ${ project.id }`);
 
 			// Create project directory
 			await mkdirPromise(projectDir, { recursive: true });
@@ -1700,7 +1794,7 @@ chain_id = 5000
 			}
 
 			// Update project record with actual path
-			await PrimateService.prisma.project.update({
+			/*await PrimateService.prisma.project.update({
 				where: { id: project.id },
 				data: {
 					metas: {
@@ -1712,45 +1806,77 @@ chain_id = 5000
 			});
 
 			this.logger.info(`Foundry project created successfully with ID: ${ project.id }`);
-			this.logger.exit(functionName, { success: true, projectId: project.id, projectDir });
+			this.logger.exit(functionName, { success: true, projectId: project.id, projectDir });*/
 
-			return {
-				project,
-				projectDir,
-				message: `Project "${ projectName }" created successfully`,
-				initOutput: initResult.stdout,
-			};
-		} catch(error) {
-			this.logger.error(`Error creating Foundry project:`, error);
+			// Check if we should update an existing project
+			if(updateExisting && idProject) {
+				const projectIdNum = parseInt(idProject, 10);
+				if(isNaN(projectIdNum)) {
+					throw new Error('Invalid idProject format');
+				}
 
-			// If we created a project record but the Foundry init failed, update the status
-			try {
-				const projectRecord = await PrimateService.prisma.project.findFirst({
-					where: {
-						name: args.projectName,
-						userId: parseInt(args.userId, 10),
-					},
-					orderBy: {
-						createdAt: 'desc',
+				this.logger.info(`Updating existing Foundry project with ID: ${ projectIdNum }`);
+
+				// Get the existing project
+				const existingProject = await PrimateService.prisma.project.findUnique({
+					where: { id: projectIdNum },
+				});
+
+				if(!existingProject) {
+					throw new Error(`Project with ID ${ projectIdNum } not found`);
+				}
+
+				// Ensure the project belongs to the user
+				if(existingProject.userId !== userIdNum) {
+					throw new Error(`Project with ID ${ projectIdNum } does not belong to user ${ userIdNum }`);
+				}
+
+				// Update the project with new information
+				const projectDir = existingProject.metas?.projectDir || `/tmp/projects/${ userIdNum }/${ projectName.replace(/[^a-zA-Z0-9]/g, '_') }`;
+
+				// Update the project record
+				const updatedProject = await PrimateService.prisma.project.update({
+					where: { id: projectIdNum },
+					data: {
+						name: projectName,
+						description,
+						network,
+						compilerVersion,
+						foundryConfig: {
+							remappings: dependencies.map(dep => {
+								const parts = dep.split('/');
+								return `${ dep }/=lib/${ parts[0] }-contracts/`;
+							}),
+							optimizer: { enabled: true, runs: 200 },
+						},
+						dependencies: dependencies,
+						metas: {
+							...existingProject.metas,
+							projectType,
+							updatedAt: new Date().toISOString(),
+						},
 					},
 				});
 
-				if(projectRecord) {
-					await PrimateService.prisma.project.update({
-						where: { id: projectRecord.id },
-						data: {
-							metas: {
-								...projectRecord.metas,
-								foundryInitializationError: error.message,
-							},
-						},
-					});
-				}
-			} catch(updateError) {
-				this.logger.error(`Failed to update project after initialization error:`, updateError);
+				this.logger.info(`Project updated successfully: ${ updatedProject.id }`);
+
+				// Return the updated project
+				return {
+					project: updatedProject,
+					projectDir,
+					message: `Project "${ projectName }" updated successfully`,
+					isUpdate: true,
+				};
+
+			} else {
+
+				this.logger.info(`Creating new Foundry project "${ projectName }" for user ${ userIdNum }`);
 			}
 
+		} catch(error) {
+			this.logger.error(`Error creating Foundry project:`, error);
 			this.logger.exit(functionName, { error: true });
+
 			throw new Error(`Failed to create Foundry project: ${ error.message }`);
 		}
 	}

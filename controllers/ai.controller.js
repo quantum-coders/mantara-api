@@ -49,10 +49,11 @@ class AiController {
 			if(!user) return res.respond({ status: 401, error: 'Unauthorized' });
 
 			// Validate required fields
-			const { prompt, idChat, idThread } = req.body;
+			const { prompt, idChat, idThread,idProject } = req.body;
 			if(!prompt) return res.respond({ status: 400, error: 'No prompt provided' });
 			if(!idChat) return res.respond({ status: 400, error: 'No chat ID provided' });
 			if(!idThread) return res.respond({ status: 400, error: 'No thread ID provided' });
+			if(!idProject) return res.respond({ status: 400, error: 'No project ID provided' });
 
 			// Delegate to the AIService's handleAiMessage method
 			await AIService.handleAiMessage(req, res, user.id);

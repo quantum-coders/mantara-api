@@ -603,8 +603,8 @@ class UserController extends PrimateController {
 
 		try {
 			// check if a chat exists for the user
-			let chat = await PrimateService.findBy('chat', { userId: user.id, entity, entityId });
-			if(!chat) chat = await PrimateService.create('chat', { userId: user.id, entity, entityId });
+			let chat = await PrimateService.findBy('chat', { userId: user.id, projectId: entityId, entity, entityId });
+			if(!chat) chat = await PrimateService.create('chat', { userId: user.id, projectId: entityId, entity, entityId });
 
 			// now create a thread for the chat or retrieve the existing thread
 			let thread = await PrimateService.findBy('thread', { chatId: chat.id });
