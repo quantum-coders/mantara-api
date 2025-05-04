@@ -23,7 +23,7 @@ class UserController extends PrimateController {
 		// if paramId is not a string or integer, throw error
 		if(typeof paramId !== 'string' && typeof paramId !== 'number') throw new Error('Invalid user id');
 
-		let signedUserId = paramId;
+		let userId = paramId;
 
 		if(paramId === 'me' || !paramId) {
 
@@ -32,13 +32,13 @@ class UserController extends PrimateController {
 			}
 
 			// Get user from req
-			signedUserId = req.user.payload.id;
+			userId = req.user.payload.id;
 		}
 
-		if(!signedUserId) throw new Error('Unauthorized: No user found');
+		if(!userId) throw new Error('Unauthorized: No user found');
 
 		/** @type {User} */
-		const user = await PrimateService.findById('user', signedUserId);
+		const user = await PrimateService.findById('user', userId);
 
 		if(!user) throw new Error('User not found');
 
