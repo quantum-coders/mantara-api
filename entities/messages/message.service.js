@@ -2,16 +2,16 @@ import primate from '@thewebchimp/primate';
 
 class MessageService {
 
-	static async getHistory(idChat, idThread) {
+	static async getHistory(chatId, threadId) {
 
 		// get the last 10 messages
 		const messages = await primate.prisma.message.findMany({
 			where: {
-				idChat,
-				idThread,
+				chatId,
+				threadId,
 			},
 			orderBy: {
-				created: 'desc',
+				createdAt: 'desc',
 			},
 			take: 20,
 		});

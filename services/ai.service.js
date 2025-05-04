@@ -1163,21 +1163,68 @@ class AIService {
 			};
 
 			// Save user message to chat history
-			await PrimateService.create('message', {
+			/*await PrimateService.create('message', {
 				userId: userId,
 				idChat,
 				idThread,
 				role: 'user',
 				text: prompt,
 				metas: { url },
-			});
+			});*/
+
+			try {
+				// Step 1: Find the chat first, and only create if it doesn't exist
+				const existingChat = await PrimateService.findById('chat', idChat);
+
+				let chatId;
+				if (existingChat) {
+					chatId = existingChat.id;
+				} else {
+					const newChat = await PrimateService.create('chat', {
+						userId: userId,
+						id: idChat,
+						metas: { url },
+					});
+
+					chatId = newChat.id;
+				}
+
+				// Step 2: Do the same for thread
+				const existingThread = await PrimateService.findById('thread',idThread);
+
+
+				let threadId;
+				if (existingThread) {
+					threadId = existingThread.id;
+				} else {
+					const newThread = await PrimateService.create('thread', {
+						uid: idThread.toString(),
+						user: { connect: { id: userId } },
+						chat: { connect: { id: chatId } }
+					});
+					threadId = newThread.id;
+				}
+
+				// Step 3: Create the message
+				await PrimateService.create('message', {
+					role: 'user',
+					text: prompt,
+					metas: { url },
+					user: { connect: { id: userId } },
+					chat: { connect: { id: chatId } },
+					thread: { connect: { id: threadId } }
+				});
+			} catch (error) {
+				console.error('Error in handleAiMessage:', error);
+				throw error;
+			}
 
 			// Get message history and context
 			const { messages, context } = await MessageService.getHistory(idChat, idThread);
 			this.logger.info(`Loaded ${ messages.length } messages from history`);
 
 			// Prepare system prompt with context and agent info if available
-			let systemPrompt = system || 'You are a helpful assistant.';
+			let systemPrompt = system || 'Eres un exertop en generar proyecto de mantle utilizando fountry, tienes una personalidad divertida y sarcastica, utiliza tus acciones disponibles si lo ves necesario.';
 
 			if(context) {
 				systemPrompt += `\n\n#Context:\n${ JSON.stringify(context) }\n\n`;
@@ -1187,7 +1234,7 @@ class AIService {
 				systemPrompt += `\n\n#Agent current information:\n${ JSON.stringify(agent) }\n\n`;
 			}
 
-			if(idCampaign) systemPrompt += `\n\n#Campaign ID: ${ idCampaign }\n\n`;
+			if(idCampaign) systemPrompt += `\n\n#Project ID: ${ idCampaign }\n\n`;
 
 			// First check if there are any tool calls needed
 			let toolResults = {};  // Cambiado de array a objeto para facilitar el acceso

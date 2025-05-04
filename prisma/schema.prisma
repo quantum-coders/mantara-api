@@ -173,7 +173,7 @@ model Deployment {
 
 model Chat {
   id        Int      @id @default(autoincrement())
-  uid       String   @unique @default(cuid())
+  uid       String?  @unique @default(cuid())
   userId    Int      @map("user_id")
   projectId Int?     @map("project_id") // Optional link to a project
   status    String   @default("Active")
